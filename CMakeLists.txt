@@ -54,6 +54,14 @@ if(OPENMP)
   message(STATUS "OpenMP enabled")
 endif()
 
+# EarthSciML instrumentation: JSON dumps of kernel inputs/outputs/internals
+# (module share/esm_dump_mod.F90; env ESM_DUMP / ESM_DUMP_CALLS / ESM_DUMP_DIR).
+# Off by default; the dump statements are compiled only with -DESM_DUMP=ON.
+if(ESM_DUMP)
+  add_compile_definitions(ESM_DUMP=1)
+  message(STATUS "ESM_DUMP instrumentation enabled")
+endif()
+
 #------------------------------------------------------------------------------
 # Add source files
 
@@ -70,7 +78,8 @@ list(APPEND _share_files share/proj_lc_mod.F90
 			 share/fmc_mod.F90
 			 share/interp_mod.F90
 			 share/mpi_mod.F90
-                         share/constants_mod.F90)
+                         share/constants_mod.F90
+                         share/esm_dump_mod.F90)
 
 # IO
 list(APPEND _io_files io/namelist_mod.F90

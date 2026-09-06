@@ -14,6 +14,10 @@
   ! https://doi.org/10.1002/2017MS001108
 
     use ros_wrffire_mod, only: ros_wrffire_t
+#ifdef ESM_DUMP
+    use ros_wrffire_mod, only: Esm_dump_ros_diag
+    use module_esm_dump
+#endif
     use stderrout_mod, only: Stop_simulation, Print_message
     use state_mod, only: state_fire_t, N_POINTS_IN_HALO
     use ignition_line_mod, only : ignition_line_t
@@ -60,6 +64,12 @@
       integer :: m, omp_get_thread_num
       integer, parameter :: fuel_left_irl = 2       ! "submesh to compute fuel lwft, even, at least 2" ""
       integer, parameter :: fuel_left_jrl = 2       ! "submesh to compute fuel lwft, even, at least 2" ""
+#ifdef ESM_DUMP
+      real, dimension (ims:ime, jms:jme) :: e_fuel_frac_before
+      logical :: e_dumping
+      e_dumping = esm_dump_want ('fuel_left')
+      e_fuel_frac_before = fuel_frac
+#endif
 
         ! refinement
       ir = fuel_left_irl
@@ -214,6 +224,18 @@
              end if
           end do
       end do
+#ifdef ESM_DUMP
+      if (e_dumping) then
+        call esm_dump_open ('fuel_left')
+        call esm_dump_var ('its', its); call esm_dump_var ('ite', ite); call esm_dump_var ('jts', jts); call esm_dump_var ('jte', jte)
+        call esm_dump_var ('ims', ims); call esm_dump_var ('ime', ime); call esm_dump_var ('jms', jms); call esm_dump_var ('jme', jme)
+        call esm_dump_var ('time_now', time_now); call esm_dump_var ('lfn', lfn); call esm_dump_var ('tign', tign)
+        call esm_dump_var ('fuel_time', fuel_time); call esm_dump_var ('fuel_frac_before', e_fuel_frac_before)
+        call esm_dump_var ('fuel_frac', fuel_frac); call esm_dump_var ('fire_area', fire_area)
+        call esm_dump_var ('fuel_frac_burnt_dt', fuel_frac_burnt_dt)
+        call esm_dump_close ()
+      end if
+#endif
 
       return
     end subroutine Calc_fuel_left
@@ -717,6 +739,18 @@
 
         ! CFL check, tbound is the max allowed time step
       tbound = min(min(tbound, tbound2), tbound3)
+#ifdef ESM_DUMP
+      if (esm_dump_want ('ls_prop')) then
+        call esm_dump_open ('ls_prop')
+        call esm_dump_var ('ifds', ifds); call esm_dump_var ('ifde', ifde); call esm_dump_var ('jfds', jfds); call esm_dump_var ('jfde', jfde)
+        call esm_dump_var ('ifms', ifms); call esm_dump_var ('ifme', ifme); call esm_dump_var ('jfms', jfms); call esm_dump_var ('jfme', jfme)
+        call esm_dump_var ('ts', ts); call esm_dump_var ('dt', dt); call esm_dump_var ('dx', dx); call esm_dump_var ('dy', dy)
+        call esm_dump_var ('lfn_in', lfn_in); call esm_dump_var ('lfn_1', lfn_1); call esm_dump_var ('lfn_2', lfn_2)
+        call esm_dump_var ('lfn_out', lfn_out); call esm_dump_var ('tend_stage3', tend); call esm_dump_var ('tbound', tbound)
+        call esm_dump_var ('ros', ros); call esm_dump_var ('grad_norm_ls', grad_norm_ls)
+        call esm_dump_close ()
+      end if
+#endif
 
       if (dt > tbound) then
         !$omp critical
@@ -1069,6 +1103,12 @@
       real, dimension (ifms:ifme, jfms:jfme), intent (in out) :: tign
       real :: time_now
       integer :: i, j
+#ifdef ESM_DUMP
+      real, dimension (ifms:ifme, jfms:jfme) :: e_tign_before
+      logical :: e_dumping
+      e_dumping = esm_dump_want ('ls_tign')
+      e_tign_before = tign
+#endif
 
 
       time_now = ts + dt
@@ -1082,6 +1122,17 @@
           if (lfn_out(i,j) > 0.0) tign(i, j) = time_now
         end do
       end do
+#ifdef ESM_DUMP
+      if (e_dumping) then
+        call esm_dump_open ('ls_tign')
+        call esm_dump_var ('ifts', ifts); call esm_dump_var ('ifte', ifte); call esm_dump_var ('jfts', jfts); call esm_dump_var ('jfte', jfte)
+        call esm_dump_var ('ifms', ifms); call esm_dump_var ('ifme', ifme); call esm_dump_var ('jfms', jfms); call esm_dump_var ('jfme', jfme)
+        call esm_dump_var ('ts', ts); call esm_dump_var ('dt', dt); call esm_dump_var ('time_now', time_now)
+        call esm_dump_var ('lfn_in', lfn_in); call esm_dump_var ('lfn_out', lfn_out)
+        call esm_dump_var ('tign_before', e_tign_before); call esm_dump_var ('tign', tign)
+        call esm_dump_close ()
+      end if
+#endif
 
     end subroutine Update_ignition_times
 
@@ -1113,6 +1164,14 @@
       integer :: i, j
       character (len = :), allocatable :: msg
       logical, parameter :: DEBUG_LOCAL = .false.
+#ifdef ESM_DUMP
+      real, dimension (ifms:ifme, jfms:jfme) :: e_difflx, e_diffrx, e_diffly, e_diffry, e_diff2x, e_diff2y, e_grad, &
+          e_nvx, e_nvy, e_visc, e_tend_adv
+      logical :: e_dumping
+      e_dumping = esm_dump_want ('ls_tend')
+      e_difflx = 0.0; e_diffrx = 0.0; e_diffly = 0.0; e_diffry = 0.0; e_diff2x = 0.0; e_diff2y = 0.0; e_grad = 0.0
+      e_nvx = 0.0; e_nvy = 0.0; e_visc = 0.0; e_tend_adv = 0.0
+#endif
 
 
       if (DEBUG_LOCAL) call Print_message ('Entering subroutine Calc_tend_ls')
@@ -1336,11 +1395,39 @@
           end if
 
           tend(i, j) = tend(i, j) + fire_viscosity_var * abs (ros(i, j)) * ((diffrx - difflx) + (diffry - diffly))
+#ifdef ESM_DUMP
+          e_difflx(i, j) = difflx; e_diffrx(i, j) = diffrx; e_diffly(i, j) = diffly; e_diffry(i, j) = diffry
+          e_diff2x(i, j) = diff2x; e_diff2y(i, j) = diff2y; e_grad(i, j) = grad; e_nvx(i, j) = nvx; e_nvy(i, j) = nvy
+          e_visc(i, j) = fire_viscosity_var; e_tend_adv(i, j) = -ros(i, j) * grad
+#endif
         end do
       end do
 
         ! final CFL bound
       tbound = 1.0 / (tbound + TOL)
+#ifdef ESM_DUMP
+      if (e_dumping) then
+        call esm_dump_open ('ls_tend')
+        call esm_dump_var ('ids', ids); call esm_dump_var ('ide', ide); call esm_dump_var ('jds', jds); call esm_dump_var ('jde', jde)
+        call esm_dump_var ('its', its); call esm_dump_var ('ite', ite); call esm_dump_var ('jts', jts); call esm_dump_var ('jte', jte)
+        call esm_dump_var ('ifms', ifms); call esm_dump_var ('ifme', ifme); call esm_dump_var ('jfms', jfms); call esm_dump_var ('jfme', jfme)
+        call esm_dump_var ('t', t); call esm_dump_var ('dt', dt); call esm_dump_var ('dx', dx); call esm_dump_var ('dy', dy)
+        call esm_dump_var ('fire_upwinding', fire_upwinding); call esm_dump_var ('fire_viscosity', fire_viscosity)
+        call esm_dump_var ('fire_viscosity_bg', fire_viscosity_bg); call esm_dump_var ('fire_viscosity_band', fire_viscosity_band)
+        call esm_dump_var ('fire_viscosity_ngp', fire_viscosity_ngp); call esm_dump_var ('fire_lsm_band_ngp', fire_lsm_band_ngp)
+        call esm_dump_var ('bdy_eno1', BDY_ENO1); call esm_dump_var ('eps', EPS); call esm_dump_var ('tol', TOL)
+        call esm_dump_var ('lfn', lfn); call esm_dump_var ('uf', uf); call esm_dump_var ('vf', vf)
+        call esm_dump_var ('dzdxf', dzdxf); call esm_dump_var ('dzdyf', dzdyf)
+        call esm_dump_var ('difflx', e_difflx); call esm_dump_var ('diffrx', e_diffrx); call esm_dump_var ('diffly', e_diffly)
+        call esm_dump_var ('diffry', e_diffry); call esm_dump_var ('diff2x', e_diff2x); call esm_dump_var ('diff2y', e_diff2y)
+        call esm_dump_var ('grad', e_grad); call esm_dump_var ('nvx', e_nvx); call esm_dump_var ('nvy', e_nvy)
+        call esm_dump_var ('viscosity_var', e_visc); call esm_dump_var ('tend_adv', e_tend_adv)
+        call esm_dump_var ('ros', ros); call esm_dump_var ('grad_norm_ls', grad_norm_ls); call esm_dump_var ('tend', tend)
+        call esm_dump_var ('tbound', tbound)
+        call Esm_dump_ros_diag ()
+        call esm_dump_close ()
+      end if
+#endif
 
       if (DEBUG_LOCAL) call Print_message ('Leaving subroutine Calc_tend_ls')
 

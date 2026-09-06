@@ -1,6 +1,14 @@
+#ifdef ESM_DUMP
+#define ESM_PURE
+#else
+#define ESM_PURE pure
+#endif
   module ros_wrffire_mod
 
     use constants_mod, only : CMBCNST, CONVERT_J_PER_KG_TO_BTU_PER_POUND
+#ifdef ESM_DUMP
+    use module_esm_dump
+#endif
     use fuel_mod, only : fuel_t
     use namelist_mod, only : namelist_t
     use ros_mod, only : ros_t
@@ -11,6 +19,14 @@
     private
 
     public :: ros_wrffire_t
+#ifdef ESM_DUMP
+    public :: Esm_dump_ros_diag
+      ! EarthSciML instrumentation: per-cell intermediates of Calc_ros_wrffire
+      ! (module-level because Calc_ros has intent(in) this); filled on every
+      ! call, dumped by Esm_dump_ros_diag from the level-set tendency dump.
+    real, dimension(:, :), allocatable, save :: e_speed, e_tanphi, e_cor_wind, e_cor_slope, &
+        e_umid, e_phiw, e_phis, e_ros_base, e_ros_wind, e_ros_slope
+#endif
 
     logical, parameter :: FIRE_GROWS_ONLY = .true.
     integer, parameter :: SLOPE_FACTOR = 1.0
@@ -29,7 +45,7 @@
 
   contains
 
-    pure function Calc_ros_wrffire (this, ifms, ifme, jfms, jfme, i, j, nvx, nvy, uf, vf, dzdxf, dzdyf) result (return_value)
+    ESM_PURE function Calc_ros_wrffire (this, ifms, ifme, jfms, jfme, i, j, nvx, nvy, uf, vf, dzdxf, dzdyf) result (return_value)
 
       implicit none
 
@@ -46,6 +62,9 @@
       real, parameter :: ROS_MAX = 6.0
 
 
+#ifdef ESM_DUMP
+      umid = 0.0; phiw = 0.0; phis = 0.0
+#endif
       if (FIRE_ADVECTION /= 0) then
           ! wind speed is total speed 
         speed = sqrt (uf * uf + vf * vf) + tiny (speed)
@@ -90,6 +109,13 @@
 
       return_value = min (ros_base + ros_wind + SLOPE_FACTOR * ros_slope, ROS_MAX)
       if (FIRE_GROWS_ONLY) return_value = max (return_value, 0.0)
+#ifdef ESM_DUMP
+      if (allocated (e_speed)) then
+        e_speed(i, j) = speed; e_tanphi(i, j) = tanphi; e_cor_wind(i, j) = cor_wind; e_cor_slope(i, j) = cor_slope
+        e_umid(i, j) = umid; e_phiw(i, j) = phiw; e_phis(i, j) = phis
+        e_ros_base(i, j) = ros_base; e_ros_wind(i, j) = ros_wind; e_ros_slope(i, j) = ros_slope
+      end if
+#endif
 
     end function Calc_ros_wrffire
 
@@ -108,8 +134,31 @@
       allocate (this%bbb(ifms:ifme, jfms:jfme))
       allocate (this%phiwc(ifms:ifme, jfms:jfme))
       allocate (this%r_0(ifms:ifme, jfms:jfme))
+#ifdef ESM_DUMP
+      if (.not. allocated (e_speed)) then
+        allocate (e_speed(ifms:ifme, jfms:jfme), e_tanphi(ifms:ifme, jfms:jfme), e_cor_wind(ifms:ifme, jfms:jfme), &
+            e_cor_slope(ifms:ifme, jfms:jfme), e_umid(ifms:ifme, jfms:jfme), e_phiw(ifms:ifme, jfms:jfme), &
+            e_phis(ifms:ifme, jfms:jfme), e_ros_base(ifms:ifme, jfms:jfme), e_ros_wind(ifms:ifme, jfms:jfme), &
+            e_ros_slope(ifms:ifme, jfms:jfme))
+        e_speed = 0.0; e_tanphi = 0.0; e_cor_wind = 0.0; e_cor_slope = 0.0; e_umid = 0.0; e_phiw = 0.0; e_phis = 0.0
+        e_ros_base = 0.0; e_ros_wind = 0.0; e_ros_slope = 0.0
+      end if
+#endif
 
     end subroutine Init_ros_wrffire
+
+#ifdef ESM_DUMP
+    subroutine Esm_dump_ros_diag ()
+      ! append the Calc_ros_wrffire intermediates to the currently open dump
+      implicit none
+      if (.not. esm_dump_active ()) return
+      call esm_dump_var ('ros_speed', e_speed); call esm_dump_var ('ros_tanphi', e_tanphi)
+      call esm_dump_var ('ros_cor_wind', e_cor_wind); call esm_dump_var ('ros_cor_slope', e_cor_slope)
+      call esm_dump_var ('ros_umid', e_umid); call esm_dump_var ('ros_phiw', e_phiw); call esm_dump_var ('ros_phis', e_phis)
+      call esm_dump_var ('ros_base', e_ros_base); call esm_dump_var ('ros_wind', e_ros_wind); call esm_dump_var ('ros_slope', e_ros_slope)
+      call esm_dump_var ('ros_max', 6.0); call esm_dump_var ('ros_back_chap', 0.03333)
+    end subroutine Esm_dump_ros_diag
+#endif
 
     subroutine Set_ros_parameters_wrffire (this, ifms, ifme, jfms, jfme, ifts, ifte, jfts, jfte, &
         fuels, nfuel_cat, fmc_g)
@@ -126,6 +175,13 @@
           xifr, etas, etam, a, gammax, gamma, ratio, ir, fuelloadm, bmst
       integer:: i, j, k, kk
       character (len = 128) :: msg
+#ifdef ESM_DUMP
+      real, dimension(ifms:ifme, jfms:jfme) :: e_bmst, e_fuelloadm, e_fuelload, e_fueldepth, e_betaop, e_qig, e_epsilon, &
+          e_rhob, e_c, e_e, e_gammax, e_a, e_ratio, e_gamma, e_wn, e_rtemp1, e_etam, e_etas, e_ir, e_xifr
+      e_bmst = 0.0; e_fuelloadm = 0.0; e_fuelload = 0.0; e_fueldepth = 0.0; e_betaop = 0.0; e_qig = 0.0; e_epsilon = 0.0
+      e_rhob = 0.0; e_c = 0.0; e_e = 0.0; e_gammax = 0.0; e_a = 0.0; e_ratio = 0.0; e_gamma = 0.0; e_wn = 0.0
+      e_rtemp1 = 0.0; e_etam = 0.0; e_etas = 0.0; e_ir = 0.0; e_xifr = 0.0
+#endif
 
 
       Loop_j: do j = jfts, jfte
@@ -192,9 +248,40 @@
               ! r_0 is the spread rate for a fire on flat ground with no wind.
               ! default spread rate in ft/min
             this%r_0(i, j) = ir * xifr / (rhob * epsilon * qig)
+#ifdef ESM_DUMP
+            e_bmst(i, j) = bmst; e_fuelloadm(i, j) = fuelloadm; e_fuelload(i, j) = fuelload; e_fueldepth(i, j) = fueldepth
+            e_betaop(i, j) = betaop; e_qig(i, j) = qig; e_epsilon(i, j) = epsilon; e_rhob(i, j) = rhob; e_c(i, j) = c; e_e(i, j) = e
+            e_gammax(i, j) = gammax; e_a(i, j) = a; e_ratio(i, j) = ratio; e_gamma(i, j) = gamma; e_wn(i, j) = wn
+            e_rtemp1(i, j) = rtemp1; e_etam(i, j) = etam; e_etas(i, j) = etas; e_ir(i, j) = ir; e_xifr(i, j) = xifr
+#endif
           end if
         end do Loop_i
       end do Loop_j
+#ifdef ESM_DUMP
+      if (esm_dump_want ('ros_params')) then
+        call esm_dump_open ('ros_params')
+        call esm_dump_var ('ifts', ifts); call esm_dump_var ('ifte', ifte); call esm_dump_var ('jfts', jfts); call esm_dump_var ('jfte', jfte)
+        call esm_dump_var ('ifms', ifms); call esm_dump_var ('ifme', ifme); call esm_dump_var ('jfms', jfms); call esm_dump_var ('jfme', jfme)
+        call esm_dump_var ('nfuel_cat', nfuel_cat); call esm_dump_var ('fmc_g', fmc_g)
+        call esm_dump_var ('n_fuel_cat', fuels%n_fuel_cat); call esm_dump_var ('no_fuel_cat', fuels%no_fuel_cat)
+        call esm_dump_var ('fgi', fuels%fgi); call esm_dump_var ('fueldepthm', fuels%fueldepthm); call esm_dump_var ('weight', fuels%weight)
+        call esm_dump_var ('ichap', fuels%ichap); call esm_dump_var ('fueldens', fuels%fueldens); call esm_dump_var ('savr', fuels%savr)
+        call esm_dump_var ('st', fuels%st); call esm_dump_var ('se', fuels%se); call esm_dump_var ('fuelmce', fuels%fuelmce)
+        call esm_dump_var ('fgi_1h', fuels%fgi_1h); call esm_dump_var ('fgi_10h', fuels%fgi_10h); call esm_dump_var ('fgi_100h', fuels%fgi_100h)
+        call esm_dump_var ('fgi_1000h', fuels%fgi_1000h); call esm_dump_var ('fgi_live', fuels%fgi_live); call esm_dump_var ('waf', fuels%waf)
+        call esm_dump_var ('fuelheat', FUELHEAT); call esm_dump_var ('cmbcnst', CMBCNST)
+        call esm_dump_var ('convert_j_per_kg_to_btu_per_pound', CONVERT_J_PER_KG_TO_BTU_PER_POUND)
+        call esm_dump_var ('bmst', e_bmst); call esm_dump_var ('fuelloadm', e_fuelloadm); call esm_dump_var ('fuelload', e_fuelload)
+        call esm_dump_var ('fueldepth', e_fueldepth); call esm_dump_var ('betaop', e_betaop); call esm_dump_var ('qig', e_qig)
+        call esm_dump_var ('epsilon', e_epsilon); call esm_dump_var ('rhob', e_rhob); call esm_dump_var ('c', e_c); call esm_dump_var ('e', e_e)
+        call esm_dump_var ('gammax', e_gammax); call esm_dump_var ('a', e_a); call esm_dump_var ('ratio', e_ratio); call esm_dump_var ('gamma', e_gamma)
+        call esm_dump_var ('wn', e_wn); call esm_dump_var ('rtemp1', e_rtemp1); call esm_dump_var ('etam', e_etam); call esm_dump_var ('etas', e_etas)
+        call esm_dump_var ('ir', e_ir); call esm_dump_var ('xifr', e_xifr)
+        call esm_dump_var ('ischap', this%ischap); call esm_dump_var ('betafl', this%betafl); call esm_dump_var ('bbb', this%bbb)
+        call esm_dump_var ('phiwc', this%phiwc); call esm_dump_var ('r_0', this%r_0); call esm_dump_var ('iboros', this%iboros)
+        call esm_dump_close ()
+      end if
+#endif
 
     end subroutine Set_ros_parameters_wrffire
 

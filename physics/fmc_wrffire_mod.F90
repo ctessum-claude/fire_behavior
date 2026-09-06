@@ -19,6 +19,9 @@
     use namelist_mod, only : namelist_t
     use fmc_mod, only : fmc_t
     use fuel_mod, only : fuel_t
+#ifdef ESM_DUMP
+    use module_esm_dump
+#endif
 
     implicit none
 
@@ -228,6 +231,16 @@
           end do
         end do
       end do
+#ifdef ESM_DUMP
+      if (esm_dump_want ('fmc_avg')) then
+        call esm_dump_open ('fmc_avg')
+        call esm_dump_var ('ifts', ifts); call esm_dump_var ('ifte', ifte); call esm_dump_var ('jfts', jfts); call esm_dump_var ('jfte', jfte)
+        call esm_dump_var ('ifms', ifms); call esm_dump_var ('ifme', ifme); call esm_dump_var ('jfms', jfms); call esm_dump_var ('jfme', jfme)
+        call esm_dump_var ('nfuel_cat', nfuel_cat); call esm_dump_var ('fmc_gw', this%fmc_gw); call esm_dump_var ('fmc_gc', this%fmc_gc)
+        call esm_dump_var ('fmc_g', fmc_g)
+        call esm_dump_close ()
+      end if
+#endif
 
     end subroutine Average_moisture_classes
 
@@ -250,9 +263,22 @@
       real, parameter :: TOL = 1e-2 ! relative change larger than that will switch to exponential ode solver 
       logical, parameter :: CHECK_RH = .false.
       real :: epsilon, Pws, Pw
+#ifdef ESM_DUMP
+      real, dimension (ifms:ifme, jfms:jfme) :: e_rain_old, e_t2_old, e_q2_old, e_psfc_old, e_rain_int, e_t, e_p, e_q, e_pw, e_pws, e_rh
+      real, dimension (ifms:ifme, MOISTURE_CLASSES, jfms:jfme) :: e_r, e_emc_d, e_emc_w, e_rlag, e_fmc_old, e_equi, e_change, e_fmc_gc_before
+      real, dimension (ifms:ifme, NUM_FMEP, jfms:jfme) :: e_fmep_before
+      logical :: e_dumping
+      e_dumping = esm_dump_want ('fmc')
+      e_rain_int = 0.0; e_t = 0.0; e_p = 0.0; e_q = 0.0; e_pw = 0.0; e_pws = 0.0; e_rh = 0.0
+      e_r = 0.0; e_emc_d = 0.0; e_emc_w = 0.0; e_rlag = 0.0; e_fmc_old = 0.0; e_equi = 0.0; e_change = 0.0
+#endif
 
 
       if (initialize) call Copy2old ()
+#ifdef ESM_DUMP
+      e_rain_old = rain_old; e_t2_old = t2_old; e_q2_old = q2_old; e_psfc_old = psfc_old
+      e_fmc_gc_before = this%fmc_gc; e_fmep_before = this%fmep
+#endif
 
       rhmax = -huge (rhmax)
       rhmin = huge (rhmin)
@@ -291,6 +317,10 @@
                 tanh (0.0415 * (t - 218.8)) * (53.878 - 1331.22 / t - 9.44523 * log (t) + 0.014025 * t))
             rh = pw / pws
             rh_fire(i, j) = rh
+#ifdef ESM_DUMP
+            e_rain_int(i, j) = rain_int; e_r(i, k, j) = r; e_t(i, j) = t; e_p(i, j) = p; e_q(i, j) = q
+            e_pw(i, j) = pw; e_pws(i, j) = pws; e_rh(i, j) = rh
+#endif
             rhmax = max (rh, rhmax)         
             rhmin = min (rh, rhmin)         
 
@@ -367,6 +397,10 @@
                 ! diagnostics out
               this%fmc_equi(i, k, j) = equi
               this%fmc_lag(i, k, j) = 1.0 / (3600.0 * rlag)
+#ifdef ESM_DUMP
+              e_emc_d(i, k, j) = emc_d; e_emc_w(i, k, j) = emc_w; e_rlag(i, k, j) = rlag; e_fmc_old(i, k, j) = fmc_old
+              e_equi(i, k, j) = equi; e_change(i, k, j) = change
+#endif
                
             end if If_rlag
           end do Loop_i
@@ -387,6 +421,30 @@
         end do
       end do
 
+#ifdef ESM_DUMP
+      if (e_dumping) then
+        call esm_dump_open ('fmc')
+        call esm_dump_var ('ifts', ifts); call esm_dump_var ('ifte', ifte); call esm_dump_var ('jfts', jfts); call esm_dump_var ('jfte', jfte)
+        call esm_dump_var ('ifms', ifms); call esm_dump_var ('ifme', ifme); call esm_dump_var ('jfms', jfms); call esm_dump_var ('jfme', jfme)
+        call esm_dump_var ('initialize', initialize); call esm_dump_var ('dt_moisture', this%dt_moisture); call esm_dump_var ('fuelmc_g', fuelmc_g)
+        call esm_dump_var ('tol', TOL); call esm_dump_var ('fmep_decay_tlag', FMEP_DECAY_TLAG); call esm_dump_var ('epsilon_mw', 0.622)
+        call esm_dump_var ('drying_lag', drying_lag); call esm_dump_var ('wetting_lag', wetting_lag)
+        call esm_dump_var ('saturation_moisture', saturation_moisture); call esm_dump_var ('saturation_rain', saturation_rain)
+        call esm_dump_var ('rain_threshold', rain_threshold); call esm_dump_var ('fmc_gc_initialization', fmc_gc_initialization)
+        call esm_dump_var ('fmc_gc_initial_value', this%fmc_gc_initial_value)
+        call esm_dump_var ('rec_drying_lag_sec', this%rec_drying_lag_sec); call esm_dump_var ('rec_wetting_lag_sec', this%rec_wetting_lag_sec)
+        call esm_dump_var ('rain', rain); call esm_dump_var ('rain_old', e_rain_old); call esm_dump_var ('t2', t2); call esm_dump_var ('t2_old', e_t2_old)
+        call esm_dump_var ('q2', q2); call esm_dump_var ('q2_old', e_q2_old); call esm_dump_var ('psfc', psfc); call esm_dump_var ('psfc_old', e_psfc_old)
+        call esm_dump_var ('fmep_before', e_fmep_before); call esm_dump_var ('fmc_gc_before', e_fmc_gc_before)
+        call esm_dump_var ('rain_int', e_rain_int); call esm_dump_var ('r', e_r); call esm_dump_var ('t', e_t); call esm_dump_var ('p', e_p)
+        call esm_dump_var ('q', e_q); call esm_dump_var ('pw', e_pw); call esm_dump_var ('pws', e_pws); call esm_dump_var ('rh', e_rh)
+        call esm_dump_var ('emc_d', e_emc_d); call esm_dump_var ('emc_w', e_emc_w); call esm_dump_var ('rlag', e_rlag)
+        call esm_dump_var ('fmc_old', e_fmc_old); call esm_dump_var ('equi', e_equi); call esm_dump_var ('change', e_change)
+        call esm_dump_var ('fmc_gc', this%fmc_gc); call esm_dump_var ('fmc_equi', this%fmc_equi); call esm_dump_var ('fmc_lag', this%fmc_lag)
+        call esm_dump_var ('fmep', this%fmep); call esm_dump_var ('rh_fire', rh_fire)
+        call esm_dump_close ()
+      end if
+#endif
       call Copy2old ()
 
       return

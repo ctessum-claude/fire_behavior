@@ -1,3 +1,8 @@
+#ifdef ESM_DUMP
+#define ESM_PURE
+#else
+#define ESM_PURE pure
+#endif
   module ros_mod
 
     use fuel_mod, only : fuel_t
@@ -33,7 +38,7 @@
         real, dimension(ifms:ifme, jfms:jfme), intent (in) :: nfuel_cat, fmc_g
       end subroutine Set_params
 
-      pure function Calc_ros (this, ifms, ifme, jfms, jfme, i, j, nvx, nvy, uf, vf, dzdxf, dzdyf) result (return_value)
+      ESM_PURE function Calc_ros (this, ifms, ifme, jfms, jfme, i, j, nvx, nvy, uf, vf, dzdxf, dzdyf) result (return_value)
         import :: ros_t, fuel_t
         class (ros_t), intent (in) :: this
         real, intent (in) :: nvx, nvy, uf, vf, dzdxf, dzdyf

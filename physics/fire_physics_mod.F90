@@ -6,6 +6,9 @@
     use namelist_mod, only: namelist_t
     use emis_mod, only : EMIS_WRFFIRE, EMIS_FMC_PM2P5
     use stderrout_mod, only : Stop_simulation
+#ifdef ESM_DUMP
+    use module_esm_dump
+#endif
 
     private
 
@@ -43,6 +46,18 @@
           grnqft(i, j) = (bmst + (1.0 - bmst) * 0.56) * (dmass / dt) * XLV
         end do
       end do
+#ifdef ESM_DUMP
+      if (esm_dump_want ('fire_flux')) then
+        call esm_dump_open ('fire_flux')
+        call esm_dump_var ('ifts', ifts); call esm_dump_var ('ifte', ifte); call esm_dump_var ('jfts', jfts); call esm_dump_var ('jfte', jfte)
+        call esm_dump_var ('ifms', ifms); call esm_dump_var ('ifme', ifme); call esm_dump_var ('jfms', jfms); call esm_dump_var ('jfme', jfme)
+        call esm_dump_var ('dt', dt); call esm_dump_var ('cmbcnst', CMBCNST); call esm_dump_var ('xlv', XLV)
+        call esm_dump_var ('water_fraction_of_cellulose', 0.56)
+        call esm_dump_var ('fuel_load_g', fuel_load_g); call esm_dump_var ('fuel_frac_burnt_dt', fuel_frac_burnt_dt)
+        call esm_dump_var ('fmc_g', grid%fmc_g); call esm_dump_var ('grnhft', grnhft); call esm_dump_var ('grnqft', grnqft)
+        call esm_dump_close ()
+      end if
+#endif
 
     end subroutine Calc_fire_fluxes
 
@@ -71,6 +86,16 @@
           end if
         end do
       end do
+#ifdef ESM_DUMP
+      if (esm_dump_want ('flame')) then
+        call esm_dump_open ('flame')
+        call esm_dump_var ('ifts', ifts); call esm_dump_var ('ifte', ifte); call esm_dump_var ('jfts', jfts); call esm_dump_var ('jfte', jfte)
+        call esm_dump_var ('ifms', ifms); call esm_dump_var ('ifme', ifme); call esm_dump_var ('jfms', jfms); call esm_dump_var ('jfme', jfme)
+        call esm_dump_var ('ros', ros); call esm_dump_var ('iboros', iboros); call esm_dump_var ('fire_area', fire_area)
+        call esm_dump_var ('flame_length', flame_length); call esm_dump_var ('ros_fl', ros_fl)
+        call esm_dump_close ()
+      end if
+#endif
 
     end subroutine Calc_flame_length
 
