@@ -6,6 +6,9 @@
     use namelist_mod, only : namelist_t
     use proj_lc_mod, only : proj_lc_t
     use stderrout_mod, only : Stop_simulation
+#ifdef ESM_DUMP
+    use module_esm_dump
+#endif
 
     implicit none
 
@@ -75,6 +78,27 @@
           v_out(i, j) = vout
         end do
       end do
+
+#ifdef ESM_DUMP
+        ! EarthSciML instrumentation (WRF-coupled path): the nearest atmosphere column and the
+        ! interpolated fire-mesh winds for a 10x10 block of fire cells at the patch origin.
+      if (esm_dump_want ('fire_wind_wrf')) then
+        call esm_dump_open ('fire_wind_wrf')
+        call esm_dump_var ('ifps', ifps); call esm_dump_var ('jfps', jfps); call esm_dump_var ('kfds', kfds); call esm_dump_var ('kfde', kfde)
+        call esm_dump_var ('kms', kms); call esm_dump_var ('kme', kme)
+        call esm_dump_var ('fire_wind_height', fire_wind_height); call esm_dump_var ('fire_lsm_zcoupling_ref', fire_lsm_zcoupling_ref)
+        call esm_dump_var ('fire_lsm_zcoupling', fire_lsm_zcoupling)
+        call proj%Calc_ij (lats_in(ifps, jfps), lons_in(ifps, jfps), i_real, j_real)
+        i_wrf = min (max (ims, nint (i_real)), ime); j_wrf = min (max (jms, nint (j_real)), jme)
+        call esm_dump_var ('i_wrf_origin', i_wrf); call esm_dump_var ('j_wrf_origin', j_wrf)
+        call esm_dump_var ('u_phy_col', u_phy(i_wrf, :, j_wrf)); call esm_dump_var ('v_phy_col', v_phy(i_wrf, :, j_wrf))
+        call esm_dump_var ('z_at_w_col', z_at_w(i_wrf, :, j_wrf))
+        call esm_dump_var ('z0f', z0f(ifps:min (ifpe, ifps + 9), jfps:min (jfpe, jfps + 9)))
+        call esm_dump_var ('uf', u_out(ifps:min (ifpe, ifps + 9), jfps:min (jfpe, jfps + 9)))
+        call esm_dump_var ('vf', v_out(ifps:min (ifpe, ifps + 9), jfps:min (jfpe, jfps + 9)))
+        call esm_dump_close ()
+      end if
+#endif
 
     end subroutine  Interp_wrfwinds_to_cfbm
 
@@ -156,6 +180,29 @@
         end do
       end do
 
+#ifdef ESM_DUMP
+        ! EarthSciML instrumentation: fire -> atmosphere feedback for this tile: the fire-mesh fluxes,
+        ! their aggregation onto the atmosphere grid, the column geometry, and (after Fire_tendency)
+        ! the theta and qv tendencies (mass-weighted, as WRF stores them).
+      if (esm_dump_want ('fire_feedback')) then
+        call esm_dump_open ('fire_feedback')
+        call esm_dump_var ('its', its); call esm_dump_var ('ite', ite); call esm_dump_var ('jts', jts); call esm_dump_var ('jte', jte)
+        call esm_dump_var ('kts', kts); call esm_dump_var ('kte', kte); call esm_dump_var ('kde', kde)
+        call esm_dump_var ('ids', ids); call esm_dump_var ('ide', ide); call esm_dump_var ('jds', jds); call esm_dump_var ('jde', jde)
+        call esm_dump_var ('ifts', ifts); call esm_dump_var ('ifte', ifte); call esm_dump_var ('jfts', jfts); call esm_dump_var ('jfte', jfte)
+        call esm_dump_var ('sr_x', sr_x); call esm_dump_var ('sr_y', sr_y)
+        call esm_dump_var ('alfg', alfg); call esm_dump_var ('alfc', alfc); call esm_dump_var ('z1can', z1can)
+        call esm_dump_var ('fire_atm_feedback', config_flags%fire_atm_feedback)
+        call esm_dump_var ('cp', CP); call esm_dump_var ('xlv', XLV)
+        call esm_dump_var ('fgrnhfx', fgrnhfx(ifts:ifte, jfts:jfte)); call esm_dump_var ('fgrnqfx', fgrnqfx(ifts:ifte, jfts:jfte))
+        call esm_dump_var ('grnhfx', grnhfx(its:ite, jts:jte)); call esm_dump_var ('grnqfx', grnqfx(its:ite, jts:jte))
+        call esm_dump_var ('canhfx', canhfx(its:ite, jts:jte)); call esm_dump_var ('canqfx', canqfx(its:ite, jts:jte))
+        call esm_dump_var ('rho', rho(its:ite, kts:kte, jts:jte)); call esm_dump_var ('dz8w', dz8w(its:ite, kts:kte, jts:jte))
+        call esm_dump_var ('z_at_w', z_at_w(its:ite, kts:kte, jts:jte)); call esm_dump_var ('mu', mu(its:ite, jts:jte))
+        call esm_dump_var ('c1h', c1h(kts:kte)); call esm_dump_var ('c2h', c2h(kts:kte))
+        esm_dump_inner = .true.
+      end if
+#endif
       call Fire_tendency (               &
             ids,ide - 1,kds,kde,jds,jde - 1,     & ! dimensions
             ims,ime,kms,kme,jms,jme,     &
@@ -165,6 +212,13 @@
             z_at_w,dz8w,mu,c1h,c2h,rho,  &
             config_flags%fire_atm_feedback, &
             rthfrten,rqvfrten)             ! theta and Qv tendencies
+#ifdef ESM_DUMP
+      if (esm_dump_inner) then
+        call esm_dump_var ('rthfrten', rthfrten(its:ite, kts:kte, jts:jte)); call esm_dump_var ('rqvfrten', rqvfrten(its:ite, kts:kte, jts:jte))
+        esm_dump_inner = .false.
+        call esm_dump_close ()
+      end if
+#endif
 
       if (tracer_opt == 3) call Calc_smoke_aod (dz8w, p_phy, t_phy, qv, rho, smoke_tracer, aod5502d_smoke, &
            ids, ide, kds, kde, jds, jde,          &
