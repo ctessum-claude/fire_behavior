@@ -977,6 +977,12 @@
 
       integer :: i, j
       real :: diffLx, diffLy, diffRx, diffRy, diff2x, diff2y, grad, tend_r
+#ifdef ESM_DUMP
+      real, dimension (ifms:ifme, jfms:jfme) :: e_diff2x, e_diff2y, e_tend_r
+      logical :: e_dumping
+      e_dumping = esm_dump_want ('ls_reinit')
+      e_diff2x = 0.0; e_diff2y = 0.0; e_tend_r = 0.0
+#endif
 
 
       do j = jfts, jfte 
@@ -1084,8 +1090,28 @@
             grad_norm_reinit(i, j) = grad
             tend_r = lfn_s0(i, j) * (1.0 - grad)
             lfn_fin(i, j) = lfn_ini(i, j) + (dt_s * rk_coeff) * tend_r
+#ifdef ESM_DUMP
+            e_diff2x(i, j) = diff2x; e_diff2y(i, j) = diff2y; e_tend_r(i, j) = tend_r
+#endif
         end do
       end do
+
+#ifdef ESM_DUMP
+      if (e_dumping) then
+        call esm_dump_open ('ls_reinit')
+        call esm_dump_var ('ifds', ifds); call esm_dump_var ('ifde', ifde); call esm_dump_var ('jfds', jfds); call esm_dump_var ('jfde', jfde)
+        call esm_dump_var ('ifts', ifts); call esm_dump_var ('ifte', ifte); call esm_dump_var ('jfts', jfts); call esm_dump_var ('jfte', jfte)
+        call esm_dump_var ('ifms', ifms); call esm_dump_var ('ifme', ifme); call esm_dump_var ('jfms', jfms); call esm_dump_var ('jfme', jfme)
+        call esm_dump_var ('dx', dx); call esm_dump_var ('dy', dy); call esm_dump_var ('dt_s', dt_s)
+        call esm_dump_var ('threshold_hlu', threshold_hlu); call esm_dump_var ('rk_coeff', rk_coeff)
+        call esm_dump_var ('fire_upwinding_reinit', fire_upwinding_reinit); call esm_dump_var ('bdy_eno1', BDY_ENO1)
+        call esm_dump_var ('lfn_s0', lfn_s0); call esm_dump_var ('lfn_ini', lfn_ini); call esm_dump_var ('lfn_curr', lfn_curr)
+        call esm_dump_var ('diff2x', e_diff2x); call esm_dump_var ('diff2y', e_diff2y)
+        call esm_dump_var ('grad_norm_reinit', grad_norm_reinit); call esm_dump_var ('tend_r', e_tend_r)
+        call esm_dump_var ('lfn_fin', lfn_fin)
+        call esm_dump_close ()
+      end if
+#endif
 
     end subroutine Advance_ls_reinit
 
