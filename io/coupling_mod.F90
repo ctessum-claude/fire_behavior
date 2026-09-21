@@ -105,20 +105,22 @@
 
 #ifdef ESM_DUMP
         ! EarthSciML instrumentation: inputs and outputs of the log-profile wind interpolation
-        ! (Interp_profile) for a 10x10 block of fire cells at the tile origin; the 3-D fields are the
-        ! atmosphere winds/heights already mapped onto the fire mesh (standalone path). k = 1 is the
-        ! lowest layer; z_at_w has kime - kims + 1 levels (WRF's z_at_w with the top level dropped).
+        ! (Interp_profile) over the WHOLE fire tile; the 3-D fields are the atmosphere winds/heights
+        ! already mapped onto the fire mesh (standalone path), so no atmosphere-to-fire index mapping
+        ! is involved here. k = 1 is the lowest layer; z_at_w has kime - kims + 1 levels (WRF's
+        ! z_at_w with the top level dropped). Widened from the original 10x10 block at the tile
+        ! origin, which carried no fire in the test7 case and so could not reference a burning cell.
       if (esm_dump_want ('fire_wind')) then
         call esm_dump_open ('fire_wind')
         call esm_dump_var ('iops', iops); call esm_dump_var ('jops', jops); call esm_dump_var ('kims', kims); call esm_dump_var ('kime', kime)
         call esm_dump_var ('fire_wind_height', fire_wind_height); call esm_dump_var ('fire_lsm_zcoupling_ref', fire_lsm_zcoupling_ref)
         call esm_dump_var ('fire_lsm_zcoupling', fire_lsm_zcoupling); call esm_dump_var ('cap_winds', cap_winds_flag)
-        call esm_dump_var ('u3d', u3d(iops:min (iope, iops + 9), jops:min (jope, jops + 9), :))
-        call esm_dump_var ('v3d', v3d(iops:min (iope, iops + 9), jops:min (jope, jops + 9), :))
-        call esm_dump_var ('z_at_w', z_at_w(iops:min (iope, iops + 9), jops:min (jope, jops + 9), :))
-        call esm_dump_var ('z0', z0(iops:min (iope, iops + 9), jops:min (jope, jops + 9)))
-        call esm_dump_var ('uf', u_out(iops:min (iope, iops + 9), jops:min (jope, jops + 9)))
-        call esm_dump_var ('vf', v_out(iops:min (iope, iops + 9), jops:min (jope, jops + 9)))
+        call esm_dump_var ('u3d', u3d(iops:iope, jops:jope, :))
+        call esm_dump_var ('v3d', v3d(iops:iope, jops:jope, :))
+        call esm_dump_var ('z_at_w', z_at_w(iops:iope, jops:jope, :))
+        call esm_dump_var ('z0', z0(iops:iope, jops:jope))
+        call esm_dump_var ('uf', u_out(iops:iope, jops:jope))
+        call esm_dump_var ('vf', v_out(iops:iope, jops:jope))
         call esm_dump_close ()
       end if
 #endif
