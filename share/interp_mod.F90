@@ -2,6 +2,10 @@
 
     use proj_lc_mod, only : proj_lc_t
 
+#ifdef ESM_DUMP
+    use module_esm_dump
+#endif
+
     implicit none
 
     private
@@ -56,6 +60,13 @@
 
       integer :: i, j, i0, j0, i1, j1
       real :: i_real, j_real, di, dj
+#ifdef ESM_DUMP
+      real, dimension (ifms:ifme, jfms:jfme) :: e_ireal, e_jreal, e_di, e_dj
+      real, dimension (ifms:ifme, jfms:jfme) :: e_i0, e_j0
+      logical :: e_dumping
+      e_dumping = esm_dump_want ('hinterp')
+      e_ireal = 0.0; e_jreal = 0.0; e_di = 0.0; e_dj = 0.0; e_i0 = 0.0; e_j0 = 0.0
+#endif
 
 
       do j = jfts, jfte
@@ -74,8 +85,27 @@
               di * (1.0 - dj) * data_in(i1, j0) + &
               (1.0 - di) * dj * data_in(i0, j1) + &
               di * dj * data_in(i1, j1)
+#ifdef ESM_DUMP
+          e_ireal(i, j) = i_real; e_jreal(i, j) = j_real; e_di(i, j) = di; e_dj(i, j) = dj
+          e_i0(i, j) = real (i0); e_j0(i, j) = real (j0)
+#endif
         end do
       end do
+
+#ifdef ESM_DUMP
+      if (e_dumping) then
+        call esm_dump_open ('hinterp')
+        call esm_dump_var ('ims', ims); call esm_dump_var ('ime', ime); call esm_dump_var ('jms', jms); call esm_dump_var ('jme', jme)
+        call esm_dump_var ('ifms', ifms); call esm_dump_var ('ifme', ifme); call esm_dump_var ('jfms', jfms); call esm_dump_var ('jfme', jfme)
+        call esm_dump_var ('ifts', ifts); call esm_dump_var ('ifte', ifte); call esm_dump_var ('jfts', jfts); call esm_dump_var ('jfte', jfte)
+        call esm_dump_var ('data_in', data_in); call esm_dump_var ('data_out', data_out)
+        call esm_dump_var ('i_real', e_ireal); call esm_dump_var ('j_real', e_jreal)
+        call esm_dump_var ('di', e_di); call esm_dump_var ('dj', e_dj)
+        call esm_dump_var ('i0', e_i0); call esm_dump_var ('j0', e_j0)
+        call esm_dump_var ('lats_out', lats_out); call esm_dump_var ('lons_out', lons_out)
+        call esm_dump_close ()
+      end if
+#endif
 
     end subroutine Interp_horizontal_bilinear
 
